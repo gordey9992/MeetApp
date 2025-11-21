@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MeetApp RU - Видео-чат с друзьями</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <div class="logo-icon">📹</div>
+                <span>MeetApp RU</span>
+            </div>
+            <div class="status" id="connectionStatus">
+                <div class="status-dot"></div>
+                <span>Подключение...</span>
+            </div>
+        </header>
+
+        <!-- Лобби -->
+        <div class="lobby" id="lobby">
+            <div class="lobby-content">
+                <h1>Создайте или присоединитесь к встрече</h1>
+                <div class="lobby-buttons">
+                    <button class="btn primary" id="createRoom">
+                        Создать новую встречу
+                    </button>
+                    <div class="divider">или</div>
+                    <div class="join-section">
+                        <input type="text" id="roomIdInput" placeholder="Введите ID встречи">
+                        <input type="text" id="userNameInput" placeholder="Ваше имя" value="Пользователь">
+                        <button class="btn secondary" id="joinRoom">
+                            Присоединиться
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="room-info" id="roomInfo" style="display: none;">
+                    <h3>Ваша встреча создана!</h3>
+                    <p>Поделитесь этой ссылкой с друзьями:</p>
+                    <div class="invite-link">
+                        <input type="text" id="inviteLink" readonly>
+                        <button class="btn" id="copyInviteLink">Копировать</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Основной интерфейс звонка -->
+        <div class="main-content" id="callInterface" style="display: none;">
+            <div class="video-container">
+                <div class="video-grid" id="videoGrid">
+                    <!-- Видео элементы будут добавляться здесь -->
+                </div>
+                
+                <div class="controls">
+                    <button class="control-btn active" id="micToggle" title="Микрофон">
+                        🎤
+                    </button>
+                    <button class="control-btn active" id="cameraToggle" title="Камера">
+                        📹
+                    </button>
+                    <button class="control-btn" id="screenShare" title="Демонстрация экрана">
+                        🖥️
+                    </button>
+                    <button class="control-btn end-call" id="endCall" title="Завершить звонок">
+                        📞
+                    </button>
+                </div>
+            </div>
+
+            <div class="sidebar">
+                <div class="panel">
+                    <h2>👥 Участники (<span id="participantsCount">1</span>)</h2>
+                    <ul class="participants-list" id="participantsList">
+                        <!-- Список участников -->
+                    </ul>
+                </div>
+
+                <div class="panel">
+                    <h2>💬 Чат</h2>
+                    <div class="chat-messages" id="chatMessages">
+                        <!-- Сообщения чата -->
+                    </div>
+                    <div class="chat-input">
+                        <input type="text" id="messageInput" placeholder="Введите сообщение...">
+                        <button class="btn" id="sendMessage">Отправить</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>MeetApp RU &copy; 2023 | Реальный видео-чат с WebRTC</p>
+        </footer>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
