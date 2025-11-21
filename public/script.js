@@ -585,4 +585,72 @@ class MeetApp {
                 message: message
             });
             
-            this.addMessage(this.userName
+            this.addMessage(this.userName, message, true);
+            messageInput.value = '';
+        }
+    }
+
+    addMessage(userName, message, isOwn = false, timestamp = null) {
+        const chatMessages = document.getElementById('chatMessages');
+        const messageElement = document.createElement('div');
+        
+        messageElement.className = `message ${isOwn ? 'own' : 'other'}`;
+        
+        const time = timestamp || new Date().toLocaleTimeString([], { 
+            hour: '2-digit', minute: '2-digit' 
+        });
+        
+        messageElement.innerHTML = `
+            <strong>${userName}:</strong> ${message}
+            <div style="font-size: 0.8em; opacity: 0.7; margin-top: 5px;">${time}</div>
+        `;
+        
+        chatMessages.appendChild(messageElement);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    // Вспомогательные методы
+    copyInviteLink() {
+        const inviteLink = document.getElementById('inviteLink');
+        inviteLink.select();
+        document.execCommand('copy');
+        alert('Ссылка скопирована в буфер обмена!');
+    }
+
+    updateConnectionStatus(status, text) {
+        const statusElement = document.getElementById('connectionStatus');
+        statusElement.className = `status ${status}`;
+        statusElement.querySelector('span').textContent = text;
+    }
+
+    showScreenShareIndicator(userId) {
+        const videoContainer = document.getElementById(`remoteVideoContainer-${userId}`);
+        if (videoContainer) {
+            const indicator = document.createElement('div');
+            indicator.className = 'screen-share-indicator';
+            indicator.textContent = 'Демонстрация экрана';
+            indicator.id = `screenShareIndicator-${userId}`;
+            videoContainer.appendChild(indicator);
+        }
+    }
+
+    hideScreenShareIndicator(userId) {
+        const indicator = document.getElementById(`screenShareIndicator-${userId}`);
+        if (indicator) {
+            indicator.remove();
+        }
+    }
+}
+
+// Инициализация приложения при загрузке страницы
+document.addEventListener('DOMContentLoaded', () => {
+    window.meetApp = new MeetApp();
+    
+    // Проверка параметров URL для автоматического присоединения к комнате
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomId = urlParams.get('room');
+    
+    if (roomId) {
+        document.getElementById('roomIdInput').value = roomId;
+    }
+});
