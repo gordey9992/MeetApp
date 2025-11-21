@@ -1,89 +1,36 @@
 class DiscordApp {
     constructor() {
-        this.socket = null;
-        this.currentUser = null;
-        this.currentServer = null;
-        this.currentChannel = null;
+        this.currentUser = {
+            username: 'Гость',
+            avatarColor: '#0088cc'
+        };
+        this.currentChannel = 'general';
         this.currentVoiceChannel = null;
-        this.peerConnections = new Map();
         this.localStream = null;
+        this.peerConnections = new Map();
+        this.dataChannel = null;
+        this.isInVoiceChannel = false;
         
         this.initializeApp();
     }
 
-    async initializeApp() {
-        await this.checkAuth();
-        this.connectSocket();
+    initializeApp() {
+        this.loadUserSettings();
         this.setupEventListeners();
+        this.updateUI();
     }
 
-    async checkAuth() {
-        const token = localStorage.getItem('discord_token');
-        if (!token) {
-            window.location.href = '/auth.html';
-            return;
-        }
+    loadUserSettings() {
+        const savedUsername = localStorage.getItem('discord_username');
+        const savedColor = localStorage.getItem('discord_avatar_color');
         
-        // Проверяем токен
-        try {
-            const response = await fetch('/api/verify', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            
-            if (!response.ok) {
-                throw new Error('Invalid token');
-            }
-        } catch (error) {
-            localStorage.removeItem('discord_token');
-            window.location.href = '/auth.html';
-        }
+        if (savedUsername) this.currentUser.username = savedUsername;
+        if (savedColor) this.currentUser.avatarColor = savedColor;
     }
 
-    connectSocket() {
-        const token = localStorage.getItem('discord_token');
-        this.socket = io();
-        
-        this.socket.emit('authenticate', token);
-        
-        this.socket.on('authenticated', (data) => {
-            this.currentUser = data.user;
-            this.currentServer = data.mainServer;
-            this.updateUI();
-        });
-
-        this.socket.on('auth-error', () => {
-            localStorage.removeItem('discord_token');
-            window.location.href = '/auth.html';
-        });
-
-        // Сообщения
-        this.socket.on('new-message', (message) => {
-            this.displayMessage(message);
-        });
-
-        this.socket.on('channel-history', (messages) => {
-            this.displayMessageHistory(messages);
-        });
-
-        // Голосовые каналы
-        this.socket.on('user-joined-voice', (user) => {
-            this.addVoiceParticipant(user);
-        });
-
-        this.socket.on('user-left-voice', (socketId) => {
-            this.removeVoiceParticipant(socketId);
-        });
-
-        this.socket.on('voice-users', (users) => {
-            this.updateVoiceParticipants(users);
-        });
-
-        // WebRTC signaling
-        this.socket.on('voice-offer', this.handleVoiceOffer.bind(this));
-        this.socket.on('voice-answer', this.handleVoiceAnswer.bind(this));
-        this.socket.on('voice-ice-candidate', this.handleVoiceIceCandidate.bind(this));
+    saveUserSettings() {
+        localStorage.setItem('discord_username', this.currentUser.username);
+        localStorage.setItem('discord_avatar_color', this.currentUser.avatarColor);
     }
 
     setupEventListeners() {
@@ -107,6 +54,10 @@ class DiscordApp {
             }
         });
 
+        document.getElementById('sendMessageBtn').addEventListener('click', () => {
+            this.sendMessage();
+        });
+
         // Голосовое управление
         document.getElementById('leaveVoiceBtn').addEventListener('click', () => {
             this.leaveVoiceChannel();
@@ -116,28 +67,49 @@ class DiscordApp {
             this.toggleMicrophone();
         });
 
-        // Создание сервера
-        document.querySelector('[data-server="new"]').addEventListener('click', () => {
-            this.showCreateServerModal();
+        document.getElementById('voiceDisconnect').addEventListener('click', () => {
+            this.leaveVoiceChannel();
         });
 
-        document.getElementById('confirmCreateServer').addEventListener('click', () => {
-            this.createServer();
+        document.getElementById('voiceScreenShare').addEventListener('click', () => {
+            this.toggleScreenShare();
         });
 
-        document.getElementById('cancelCreateServer').addEventListener('click', () => {
-            this.hideCreateServerModal();
+        // Управление участниками
+        document.getElementById('membersToggle').addEventListener('click', () => {
+            this.toggleMembersSidebar();
+        });
+
+        // Настройки
+        document.getElementById('settingsBtn').addEventListener('click', () => {
+            this.showSettingsModal();
+        });
+
+        document.getElementById('saveSettings').addEventListener('click', () => {
+            this.saveSettings();
+        });
+
+        document.getElementById('cancelSettings').addEventListener('click', () => {
+            this.hideSettingsModal();
+        });
+
+        // Микрофон в основном интерфейсе
+        document.getElementById('micToggle').addEventListener('click', () => {
+            this.toggleMainMicrophone();
         });
     }
 
     updateUI() {
         document.getElementById('currentUsername').textContent = this.currentUser.username;
         
-        // Обновляем аватар пользователя
-        const userAvatar = document.querySelector('.user-avatar');
-        if (userAvatar) {
-            userAvatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(this.currentUser.username)}&background=random`;
-        }
+        // Обновляем аватар
+        const avatars = document.querySelectorAll('.user-avatar, .member-avatar');
+        avatars.forEach(avatar => {
+            if (avatar.parentElement.querySelector('.member-name')?.textContent === 'Вы' || 
+                avatar.parentElement.querySelector('.username')?.textContent === this.currentUser.username) {
+                avatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(this.currentUser.username)}&background=${this.currentUser.avatarColor.substring(1)}`;
+            }
+        });
     }
 
     joinTextChannel(channelName) {
@@ -148,232 +120,122 @@ class DiscordApp {
         document.querySelector(`[data-channel="${channelName}"]`).classList.add('active');
 
         // Обновляем заголовок
-        document.querySelector('.channel-title').textContent = channelName;
+        document.getElementById('channelTitle').textContent = channelName;
         document.getElementById('messageInput').placeholder = `Написать сообщение в #${channelName}`;
+        this.currentChannel = channelName;
 
-        // Присоединяемся к каналу на сервере
-        const channel = this.findChannelByName(channelName);
-        if (channel) {
-            this.socket.emit('join-channel', channel.id);
-            this.currentChannel = channel;
-        }
-
-        // Очищаем сообщения
+        // Очищаем сообщения и показываем приветствие
         const messagesContainer = document.getElementById('messagesContainer');
-        messagesContainer.innerHTML = '<div class="welcome-message"><h2>Добро пожаловать в #общий-чат!</h2><p>Это начало этого канала.</p></div>';
+        messagesContainer.innerHTML = `
+            <div class="welcome-message">
+                <h2>Добро пожаловать в #${channelName}!</h2>
+                <p>Это начало канала. Начните общение!</p>
+            </div>
+        `;
     }
 
-    joinVoiceChannel(channelName) {
-        if (this.currentVoiceChannel) {
+    async joinVoiceChannel(channelName) {
+        if (this.isInVoiceChannel) {
             this.leaveVoiceChannel();
         }
 
-        this.socket.emit('join-voice', channelName);
-        this.currentVoiceChannel = channelName;
-
-        // Показываем интерфейс голосового чата
-        document.getElementById('voiceInterface').style.display = 'block';
-        document.getElementById('currentVoiceChannel').textContent = channelName;
-
-        // Инициализируем WebRTC
-        this.initializeVoiceChat();
-    }
-
-    async initializeVoiceChat() {
         try {
+            // Запрашиваем доступ к микрофону
             this.localStream = await navigator.mediaDevices.getUserMedia({
-                audio: true,
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                },
                 video: false
             });
-            
-            console.log('Голосовой чат инициализирован');
+
+            this.currentVoiceChannel = channelName;
+            this.isInVoiceChannel = true;
+
+            // Показываем интерфейс голосового чата
+            document.getElementById('voiceInterface').style.display = 'block';
+            document.getElementById('currentVoiceChannel').textContent = channelName;
+
+            // Создаем локальный аудио элемент для мониторинга
+            this.createLocalAudioMonitor();
+
+            console.log('Успешно присоединились к голосовому каналу:', channelName);
+
         } catch (error) {
             console.error('Ошибка доступа к микрофону:', error);
-            alert('Не удалось получить доступ к микрофону');
+            alert('Не удалось получить доступ к микрофону. Пожалуйста, проверьте разрешения.');
         }
+    }
+
+    createLocalAudioMonitor() {
+        // Создаем скрытый аудио элемент для мониторинга собственного голоса
+        const audio = document.createElement('audio');
+        audio.srcObject = this.localStream;
+        audio.volume = 0.3; // Тише, чтобы не было эха
+        audio.play().catch(e => console.log('Audio play error:', e));
+        
+        // Добавляем индикатор активности микрофона
+        this.setupVoiceActivityDetection();
+    }
+
+    setupVoiceActivityDetection() {
+        const audioContext = new AudioContext();
+        const source = audioContext.createMediaStreamSource(this.localStream);
+        const analyser = audioContext.createAnalyser();
+        source.connect(analyser);
+        
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        const indicator = document.querySelector('#localParticipant .voice-indicator');
+        
+        const checkVolume = () => {
+            if (!this.isInVoiceChannel) return;
+            
+            analyser.getByteFrequencyData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                sum += dataArray[i];
+            }
+            const average = sum / dataArray.length;
+            
+            // Обновляем индикатор в зависимости от громкости
+            if (average > 20) { // Порог активации
+                indicator.style.color = '#43b581';
+                indicator.textContent = '🎤';
+            } else {
+                indicator.style.color = '#747f8d';
+                indicator.textContent = '🔊';
+            }
+            
+            requestAnimationFrame(checkVolume);
+        };
+        
+        checkVolume();
     }
 
     leaveVoiceChannel() {
-        if (this.currentVoiceChannel) {
-            this.socket.emit('leave-voice');
-            
-            // Останавливаем медиа потоки
-            if (this.localStream) {
-                this.localStream.getTracks().forEach(track => track.stop());
-                this.localStream = null;
-            }
-
-            // Закрываем все соединения
-            this.peerConnections.forEach((pc, socketId) => {
-                pc.close();
-            });
-            this.peerConnections.clear();
-
-            // Скрываем интерфейс
-            document.getElementById('voiceInterface').style.display = 'none';
-            this.currentVoiceChannel = null;
-            document.getElementById('voiceParticipants').innerHTML = '';
-        }
-    }
-
-    async createPeerConnection(socketId) {
-        const configuration = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' }
-            ]
-        };
-
-        const peerConnection = new RTCPeerConnection(configuration);
-        this.peerConnections.set(socketId, peerConnection);
-
-        // Добавляем локальный аудио поток
         if (this.localStream) {
-            this.localStream.getTracks().forEach(track => {
-                peerConnection.addTrack(track, this.localStream);
-            });
+            this.localStream.getTracks().forEach(track => track.stop());
+            this.localStream = null;
         }
 
-        // Обработка входящего аудио
-        peerConnection.ontrack = (event) => {
-            const audio = document.createElement('audio');
-            audio.srcObject = event.streams[0];
-            audio.autoplay = true;
-            audio.controls = false;
-            audio.style.display = 'none';
-            document.body.appendChild(audio);
-        };
-
-        // ICE candidates
-        peerConnection.onicecandidate = (event) => {
-            if (event.candidate) {
-                this.socket.emit('voice-ice-candidate', {
-                    target: socketId,
-                    candidate: event.candidate
-                });
-            }
-        };
-
-        return peerConnection;
-    }
-
-    async handleVoiceOffer(data) {
-        const peerConnection = await this.createPeerConnection(data.sender);
-        
-        await peerConnection.setRemoteDescription(data.offer);
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        
-        this.socket.emit('voice-answer', {
-            target: data.sender,
-            answer: answer
+        // Закрываем все peer connections
+        this.peerConnections.forEach((pc, id) => {
+            pc.close();
         });
-    }
+        this.peerConnections.clear();
 
-    async handleVoiceAnswer(data) {
-        const peerConnection = this.peerConnections.get(data.sender);
-        if (peerConnection) {
-            await peerConnection.setRemoteDescription(data.answer);
+        // Скрываем интерфейс
+        document.getElementById('voiceInterface').style.display = 'none';
+        this.currentVoiceChannel = null;
+        this.isInVoiceChannel = false;
+
+        // Сбрасываем индикатор микрофона
+        const indicator = document.querySelector('#localParticipant .voice-indicator');
+        if (indicator) {
+            indicator.style.color = '#747f8d';
+            indicator.textContent = '🔊';
         }
-    }
-
-    async handleVoiceIceCandidate(data) {
-        const peerConnection = this.peerConnections.get(data.sender);
-        if (peerConnection) {
-            await peerConnection.addIceCandidate(data.candidate);
-        }
-    }
-
-    addVoiceParticipant(user) {
-        const voiceParticipants = document.getElementById('voiceParticipants');
-        
-        const participant = document.createElement('div');
-        participant.className = 'voice-participant';
-        participant.id = `voice-participant-${user.socketId}`;
-        participant.innerHTML = `
-            <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(user.username)}&background=random" class="member-avatar">
-            <span class="member-name">${user.username}</span>
-            <div class="voice-indicator">🔊</div>
-        `;
-        
-        voiceParticipants.appendChild(participant);
-
-        // Создаем peer connection для нового пользователя
-        this.createPeerConnection(user.socketId).then(async (peerConnection) => {
-            const offer = await peerConnection.createOffer();
-            await peerConnection.setLocalDescription(offer);
-            
-            this.socket.emit('voice-offer', {
-                target: user.socketId,
-                offer: offer
-            });
-        });
-    }
-
-    removeVoiceParticipant(socketId) {
-        const participant = document.getElementById(`voice-participant-${socketId}`);
-        if (participant) {
-            participant.remove();
-        }
-
-        const peerConnection = this.peerConnections.get(socketId);
-        if (peerConnection) {
-            peerConnection.close();
-            this.peerConnections.delete(socketId);
-        }
-    }
-
-    updateVoiceParticipants(users) {
-        const voiceParticipants = document.getElementById('voiceParticipants');
-        voiceParticipants.innerHTML = '';
-
-        users.forEach(user => {
-            if (user.socketId !== this.socket.id) {
-                this.addVoiceParticipant(user);
-            }
-        });
-    }
-
-    sendMessage() {
-        const input = document.getElementById('messageInput');
-        const content = input.value.trim();
-        
-        if (content && this.currentChannel) {
-            this.socket.emit('send-message', {
-                content: content,
-                channelId: this.currentChannel.id
-            });
-            
-            input.value = '';
-        }
-    }
-
-    displayMessage(message) {
-        const messagesContainer = document.getElementById('messagesContainer');
-        
-        const messageElement = document.createElement('div');
-        messageElement.className = 'message';
-        messageElement.innerHTML = `
-            <img src="${message.avatar}" class="message-avatar">
-            <div class="message-content">
-                <div class="message-header">
-                    <span class="message-username">${message.username}</span>
-                    <span class="message-timestamp">${new Date(message.timestamp).toLocaleTimeString()}</span>
-                </div>
-                <div class="message-text">${this.escapeHtml(message.content)}</div>
-            </div>
-        `;
-        
-        messagesContainer.appendChild(messageElement);
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    }
-
-    displayMessageHistory(messages) {
-        const messagesContainer = document.getElementById('messagesContainer');
-        messagesContainer.innerHTML = '<div class="welcome-message"><h2>Добро пожаловать в #общий-чат!</h2><p>Это начало этого канала.</p></div>';
-        
-        messages.forEach(message => {
-            this.displayMessage(message);
-        });
     }
 
     toggleMicrophone() {
@@ -383,33 +245,135 @@ class DiscordApp {
                 audioTrack.enabled = !audioTrack.enabled;
                 const btn = document.getElementById('voiceMicToggle');
                 btn.classList.toggle('active', audioTrack.enabled);
+                
+                const indicator = document.querySelector('#localParticipant .voice-indicator');
+                if (!audioTrack.enabled) {
+                    indicator.style.color = '#ed4245';
+                    indicator.textContent = '🔇';
+                } else {
+                    indicator.style.color = '#747f8d';
+                    indicator.textContent = '🔊';
+                }
             }
         }
     }
 
-    showCreateServerModal() {
-        document.getElementById('createServerModal').style.display = 'flex';
+    toggleMainMicrophone() {
+        // Просто переключает иконку в основном интерфейсе
+        const btn = document.getElementById('micToggle');
+        btn.classList.toggle('muted');
+        btn.textContent = btn.classList.contains('muted') ? '🎤❌' : '🎤';
     }
 
-    hideCreateServerModal() {
-        document.getElementById('createServerModal').style.display = 'none';
-    }
-
-    createServer() {
-        const serverName = document.getElementById('serverNameInput').value.trim();
-        if (serverName) {
-            this.socket.emit('create-server', serverName);
-            this.hideCreateServerModal();
-            document.getElementById('serverNameInput').value = '';
+    async toggleScreenShare() {
+        try {
+            if (!this.isScreenSharing) {
+                const screenStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: true,
+                    audio: true
+                });
+                
+                // Здесь можно добавить логику для трансляции экрана
+                // В реальном приложении нужно отправлять видеопоток другим участникам
+                
+                this.isScreenSharing = true;
+                document.getElementById('voiceScreenShare').classList.add('active');
+                
+                // Обработчик завершения демонстрации экрана
+                screenStream.getTracks().forEach(track => {
+                    track.onended = () => {
+                        this.isScreenSharing = false;
+                        document.getElementById('voiceScreenShare').classList.remove('active');
+                    };
+                });
+                
+            } else {
+                // Останавливаем демонстрацию экрана
+                this.isScreenSharing = false;
+                document.getElementById('voiceScreenShare').classList.remove('active');
+            }
+        } catch (error) {
+            console.error('Ошибка демонстрации экрана:', error);
         }
     }
 
-    findChannelByName(channelName) {
-        if (!this.currentServer) return null;
+    sendMessage() {
+        const input = document.getElementById('messageInput');
+        const content = input.value.trim();
         
-        return this.currentServer.channels.find(channel => 
-            channel.name === channelName
-        );
+        if (content) {
+            this.displayMessage(this.currentUser.username, content, true);
+            input.value = '';
+            
+            // В реальном приложении здесь будет отправка сообщения через WebRTC Data Channel
+            // this.sendDataChannelMessage(content);
+        }
+    }
+
+    displayMessage(username, content, isOwn = false) {
+        const messagesContainer = document.getElementById('messagesContainer');
+        
+        const messageElement = document.createElement('div');
+        messageElement.className = 'message';
+        
+        const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=${isOwn ? this.currentUser.avatarColor.substring(1) : '666666'}`;
+        
+        messageElement.innerHTML = `
+            <img src="${avatarUrl}" class="message-avatar">
+            <div class="message-content">
+                <div class="message-header">
+                    <span class="message-username">${username}</span>
+                    <span class="message-timestamp">${new Date().toLocaleTimeString()}</span>
+                </div>
+                <div class="message-text">${this.escapeHtml(content)}</div>
+            </div>
+        `;
+        
+        messagesContainer.appendChild(messageElement);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    toggleMembersSidebar() {
+        const sidebar = document.getElementById('membersSidebar');
+        sidebar.style.display = sidebar.style.display === 'none' ? 'block' : 'none';
+    }
+
+    showSettingsModal() {
+        document.getElementById('settingsModal').style.display = 'flex';
+        document.getElementById('usernameInput').value = this.currentUser.username;
+        document.getElementById('avatarColor').value = this.currentUser.avatarColor;
+    }
+
+    hideSettingsModal() {
+        document.getElementById('settingsModal').style.display = 'none';
+    }
+
+    saveSettings() {
+        const username = document.getElementById('usernameInput').value.trim();
+        const color = document.getElementById('avatarColor').value;
+        
+        if (username) {
+            this.currentUser.username = username;
+            this.currentUser.avatarColor = color;
+            this.saveUserSettings();
+            this.updateUI();
+            this.hideSettingsModal();
+        } else {
+            alert('Пожалуйста, введите имя пользователя');
+        }
+    }
+
+    // Вспомогательные методы для WebRTC (заготовка для P2P соединений)
+    createPeerConnection() {
+        // Базовый шаблон для создания peer-to-peer соединения
+        const configuration = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
+        
+        return new RTCPeerConnection(configuration);
     }
 
     escapeHtml(unsafe) {
@@ -420,9 +384,35 @@ class DiscordApp {
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#039;");
     }
+
+    // Метод для имитации получения сообщений (для демонстрации)
+    simulateIncomingMessage() {
+        const messages = [
+            "Привет! Как дела?",
+            "Кто-нибудь хочет поиграть?",
+            "Отличный сервер!",
+            "Как настроить голосовой чат?",
+            "Добро пожаловать в наш Discord!"
+        ];
+        
+        const users = ["Алексей", "Мария", "Иван", "Дмитрий", "Екатерина"];
+        
+        setTimeout(() => {
+            const randomUser = users[Math.floor(Math.random() * users.length)];
+            const randomMessage = messages[Math.floor(Math.random() * messages.length)];
+            this.displayMessage(randomUser, randomMessage, false);
+        }, 5000 + Math.random() * 10000);
+    }
 }
 
 // Инициализация приложения
 document.addEventListener('DOMContentLoaded', () => {
     window.discordApp = new DiscordApp();
+    
+    // Запускаем симуляцию входящих сообщений для демонстрации
+    setInterval(() => {
+        if (Math.random() > 0.7) { // 30% шанс на сообщение
+            window.discordApp.simulateIncomingMessage();
+        }
+    }, 15000);
 });
