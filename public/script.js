@@ -200,4 +200,229 @@ class DiscordApp {
             // Останавливаем медиа потоки
             if (this.localStream) {
                 this.localStream.getTracks().forEach(track => track.stop());
-                this.localStream = null
+                this.localStream = null;
+            }
+
+            // Закрываем все соединения
+            this.peerConnections.forEach((pc, socketId) => {
+                pc.close();
+            });
+            this.peerConnections.clear();
+
+            // Скрываем интерфейс
+            document.getElementById('voiceInterface').style.display = 'none';
+            this.currentVoiceChannel = null;
+            document.getElementById('voiceParticipants').innerHTML = '';
+        }
+    }
+
+    async createPeerConnection(socketId) {
+        const configuration = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' }
+            ]
+        };
+
+        const peerConnection = new RTCPeerConnection(configuration);
+        this.peerConnections.set(socketId, peerConnection);
+
+        // Добавляем локальный аудио поток
+        if (this.localStream) {
+            this.localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, this.localStream);
+            });
+        }
+
+        // Обработка входящего аудио
+        peerConnection.ontrack = (event) => {
+            const audio = document.createElement('audio');
+            audio.srcObject = event.streams[0];
+            audio.autoplay = true;
+            audio.controls = false;
+            audio.style.display = 'none';
+            document.body.appendChild(audio);
+        };
+
+        // ICE candidates
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+                this.socket.emit('voice-ice-candidate', {
+                    target: socketId,
+                    candidate: event.candidate
+                });
+            }
+        };
+
+        return peerConnection;
+    }
+
+    async handleVoiceOffer(data) {
+        const peerConnection = await this.createPeerConnection(data.sender);
+        
+        await peerConnection.setRemoteDescription(data.offer);
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        
+        this.socket.emit('voice-answer', {
+            target: data.sender,
+            answer: answer
+        });
+    }
+
+    async handleVoiceAnswer(data) {
+        const peerConnection = this.peerConnections.get(data.sender);
+        if (peerConnection) {
+            await peerConnection.setRemoteDescription(data.answer);
+        }
+    }
+
+    async handleVoiceIceCandidate(data) {
+        const peerConnection = this.peerConnections.get(data.sender);
+        if (peerConnection) {
+            await peerConnection.addIceCandidate(data.candidate);
+        }
+    }
+
+    addVoiceParticipant(user) {
+        const voiceParticipants = document.getElementById('voiceParticipants');
+        
+        const participant = document.createElement('div');
+        participant.className = 'voice-participant';
+        participant.id = `voice-participant-${user.socketId}`;
+        participant.innerHTML = `
+            <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(user.username)}&background=random" class="member-avatar">
+            <span class="member-name">${user.username}</span>
+            <div class="voice-indicator">🔊</div>
+        `;
+        
+        voiceParticipants.appendChild(participant);
+
+        // Создаем peer connection для нового пользователя
+        this.createPeerConnection(user.socketId).then(async (peerConnection) => {
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            
+            this.socket.emit('voice-offer', {
+                target: user.socketId,
+                offer: offer
+            });
+        });
+    }
+
+    removeVoiceParticipant(socketId) {
+        const participant = document.getElementById(`voice-participant-${socketId}`);
+        if (participant) {
+            participant.remove();
+        }
+
+        const peerConnection = this.peerConnections.get(socketId);
+        if (peerConnection) {
+            peerConnection.close();
+            this.peerConnections.delete(socketId);
+        }
+    }
+
+    updateVoiceParticipants(users) {
+        const voiceParticipants = document.getElementById('voiceParticipants');
+        voiceParticipants.innerHTML = '';
+
+        users.forEach(user => {
+            if (user.socketId !== this.socket.id) {
+                this.addVoiceParticipant(user);
+            }
+        });
+    }
+
+    sendMessage() {
+        const input = document.getElementById('messageInput');
+        const content = input.value.trim();
+        
+        if (content && this.currentChannel) {
+            this.socket.emit('send-message', {
+                content: content,
+                channelId: this.currentChannel.id
+            });
+            
+            input.value = '';
+        }
+    }
+
+    displayMessage(message) {
+        const messagesContainer = document.getElementById('messagesContainer');
+        
+        const messageElement = document.createElement('div');
+        messageElement.className = 'message';
+        messageElement.innerHTML = `
+            <img src="${message.avatar}" class="message-avatar">
+            <div class="message-content">
+                <div class="message-header">
+                    <span class="message-username">${message.username}</span>
+                    <span class="message-timestamp">${new Date(message.timestamp).toLocaleTimeString()}</span>
+                </div>
+                <div class="message-text">${this.escapeHtml(message.content)}</div>
+            </div>
+        `;
+        
+        messagesContainer.appendChild(messageElement);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+    displayMessageHistory(messages) {
+        const messagesContainer = document.getElementById('messagesContainer');
+        messagesContainer.innerHTML = '<div class="welcome-message"><h2>Добро пожаловать в #общий-чат!</h2><p>Это начало этого канала.</p></div>';
+        
+        messages.forEach(message => {
+            this.displayMessage(message);
+        });
+    }
+
+    toggleMicrophone() {
+        if (this.localStream) {
+            const audioTrack = this.localStream.getAudioTracks()[0];
+            if (audioTrack) {
+                audioTrack.enabled = !audioTrack.enabled;
+                const btn = document.getElementById('voiceMicToggle');
+                btn.classList.toggle('active', audioTrack.enabled);
+            }
+        }
+    }
+
+    showCreateServerModal() {
+        document.getElementById('createServerModal').style.display = 'flex';
+    }
+
+    hideCreateServerModal() {
+        document.getElementById('createServerModal').style.display = 'none';
+    }
+
+    createServer() {
+        const serverName = document.getElementById('serverNameInput').value.trim();
+        if (serverName) {
+            this.socket.emit('create-server', serverName);
+            this.hideCreateServerModal();
+            document.getElementById('serverNameInput').value = '';
+        }
+    }
+
+    findChannelByName(channelName) {
+        if (!this.currentServer) return null;
+        
+        return this.currentServer.channels.find(channel => 
+            channel.name === channelName
+        );
+    }
+
+    escapeHtml(unsafe) {
+        return unsafe
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+}
+
+// Инициализация приложения
+document.addEventListener('DOMContentLoaded', () => {
+    window.discordApp = new DiscordApp();
+});
