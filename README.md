@@ -33,7 +33,7 @@
 ```bash
 git clone https://github.com/your-username/meetapp-ru.git
 cd meetapp-ru
-    ```
+```
 Установить зависимости:
 
 ```bash
