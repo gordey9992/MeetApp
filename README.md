@@ -33,6 +33,7 @@
 ```bash
 git clone https://github.com/your-username/meetapp-ru.git
 cd meetapp-ru
+    ```
 Установить зависимости:
 
 ```bash
@@ -45,9 +46,11 @@ cd client && npm install
 # Сервер  
 cd ../server && npm install
 Настроить окружение:
-
+    ```
+    
 ```bash
 # Создать .env файлы (см. примеры выше)
+    ```
 Запуск в development:
 
 ```bash
@@ -57,6 +60,7 @@ npm run dev
 # Или отдельно
 cd server && npm run dev
 cd client && npm run dev
+    ```
 Открыть в браузере:
 
 ```text
