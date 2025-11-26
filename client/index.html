@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/meetapp-logo.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="MeetApp RU - Российская платформа для общения с голосовыми звонками, видеочатом и сообществами">
+    <meta name="keywords" content="мессенджер, чат, голосовые звонки, видеочат, российский discord">
+    <title>MeetApp RU 🇷🇺 - Российский мессенджер для общения</title>
+    
+    <!-- Open Graph -->
+    <meta property="og:title" content="MeetApp RU - Российский аналог Discord">
+    <meta property="og:description" content="Бесплатная платформа для общения с голосовыми звонками, видеочатом и сообществами">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="/meetapp-preview.png">
+    
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="MeetApp RU">
+    <meta name="twitter:description" content="Российская платформа для общения">
+    
+    <!-- Preload critical resources -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
+    <style>
+        /* Critical CSS для быстрой загрузки */
+        body {
+            margin: 0;
+            padding: 0;
+            background: #1e1e2e;
+            color: #cdd6f4;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            overflow: hidden;
+        }
+        
+        #root {
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        /* Loading animation */
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid #313244;
+            border-top: 3px solid #89b4fa;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 100px auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            text-align: center;
+            color: #a6adc8;
+            font-size: 18px;
+            margin-top: 20px;
+        }
+        
+        /* Smooth fade-in */
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root">
+        <!-- Loading screen -->
+        <div class="fade-in" style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; background: linear-gradient(135deg, #1e1e2e 0%, #11111b 100%);">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">
+                <div style="font-size: 24px; font-weight: bold; margin-bottom: 10px; background: linear-gradient(135deg, #89b4fa, #cba6f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                    MeetApp RU
+                </div>
+                Загружаем ваше пространство для общения...
+            </div>
+            <div style="position: absolute; bottom: 20px; color: #6c7086; font-size: 14px;">
+                🇷🇺 Российская платформа для комьюнити
+            </div>
+        </div>
+    </div>
+    
+    <script type="module" src="/src/main.jsx"></script>
+    
+    <script>
+        // Service Worker для оффлайн работы (позже)
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(registration => {
+                        console.log('SW registered: ', registration);
+                    })
+                    .catch(registrationError => {
+                        console.log('SW registration failed: ', registrationError);
+                    });
+            });
+        }
+        
+        // Preload critical fonts
+        const link = document.createElement('link');
+        link.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap';
+        link.rel = 'stylesheet';
+        document.head.appendChild(link);
+    </script>
+</body>
+</html>
