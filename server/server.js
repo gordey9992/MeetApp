@@ -1,8 +1,8 @@
-import express from 'express';
-import http from 'http';
-import { Server } from 'socket.io';
-import cors from 'cors';
-import mongoose from 'mongoose';
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const cors = require('cors');
+const mongoose = require('mongoose');
 import path from 'path';
 import { fileURLToPath } from 'url';
 
